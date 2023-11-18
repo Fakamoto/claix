@@ -1,0 +1,19 @@
+[tool.poetry]
+name = "claix"
+version = "0.1.0"
+description = "A CLI to enhance command crafting for other CLIs."
+authors = ["Facundo Goiriz <facundogoiriz@gmail.com>"]
+readme = "README.md"
+
+[tool.poetry.scripts]
+claix = "claix.main:app"
+
+[tool.poetry.dependencies]
+python = "^3.10"
+typer = {extras = ["all"], version = "^0.9.0"}
+openai = "^1.3.3"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
