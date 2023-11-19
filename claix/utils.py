@@ -1,6 +1,6 @@
 import shelve
 import subprocess
-
+from pathlib import Path
 import rich
 from claix.bot import Bot
 
@@ -8,6 +8,9 @@ DEFAULT_INSTRUCTIONS = """Claix exclusively provides Linux CLI command translati
 
 This GPT avoids any execution or simulation of CLI commands and does not engage in discussions beyond Linux CLI command translation. Claix's responses are brief and to the point, delivering Linux CLI commands in an unembellished, clear format, ensuring users receive direct and unformatted command syntax for their Linux-related inquiries."""
 
+
+db_path = Path.home() / '.claix' / 'db'
+db_path.parent.mkdir(exist_ok=True)
 
 
 
@@ -22,7 +25,7 @@ def run_shell_command(command):
 
 
 def get_assistant_id(assistant: str = "default"):
-    with shelve.open("db") as db:
+    with shelve.open(str(db_path)) as db:
         try:
             return db["assistants"][assistant]["id"]
         except KeyError:
@@ -30,7 +33,7 @@ def get_assistant_id(assistant: str = "default"):
 
 
 def set_assistant_id(assistant_id, assistant="default"):
-    with shelve.open("db") as db:
+    with shelve.open(str(db_path)) as db:
         assistants = db.get("assistants", {})
         default = assistants.get(assistant)
         if default:
@@ -53,14 +56,14 @@ def get_or_create_default_assistant_id():
 
 
 def get_thread_id(thread: str = "default"):
-    with shelve.open("db") as db:
+    with shelve.open(str(db_path)) as db:
         try:
             return db["threads"][thread]["id"]
         except KeyError:
             return None
         
 def set_thread_id(thread_id, thread="default"):
-    with shelve.open("db") as db:
+    with shelve.open(str(db_path)) as db:
         threads = db.get("threads", {})
         default = threads.get(thread)
         if default:
