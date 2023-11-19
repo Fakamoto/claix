@@ -1,7 +1,7 @@
 [tool.poetry]
 name = "claix"
-version = "0.1.0"
-description = "A CLI to enhance command crafting for other CLIs."
+version = "0.1.1"
+description = "A CLI translating user requests into specific CLI commands"
 authors = ["Facundo Goiriz <facundogoiriz@gmail.com>"]
 readme = "README.md"
 

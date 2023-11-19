@@ -1,3 +1,3 @@
 # claix
 
-A CLI to enhance command crafting for other CLIs.
+A CLI translating user requests into specific CLI commands
