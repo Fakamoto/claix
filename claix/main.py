@@ -1,17 +1,28 @@
 # src/main.py
+from claix import __version__
 from claix.bot import Bot
 from claix.utils import get_or_create_default_assistant_id, get_or_create_default_thread_id, run_shell_command, simulate_clear
+
+import rich
 from rich.panel import Panel
 from rich.text import Text
 from rich.console import Console
-import rich
+
 import typer
+
 
 app = typer.Typer(name="claix", no_args_is_help=True, add_completion=False)
 console = Console()
         
+# Version callback
+def version_callback(show_version: bool):
+    if show_version:
+        typer.echo(__version__)
+        raise typer.Exit()
+
+
 @app.command(help="Turns your instructions into CLI commands ready to execute.")
-def main(instructions: list[str] = typer.Argument(None, help="The instructions that you want to execute. Pass them as a list of strings.", )):
+def main(instructions: list[str] = typer.Argument(None, help="The instructions that you want to execute. Pass them as a list of strings.", ), show_version: bool = typer.Option(None, "--version", "-v", callback=version_callback, is_eager=True, help="Show the version and exit.", ),):
     """
     Claix is a command line assistant that helps you translate instructions into CLI commands.
 
@@ -74,7 +85,7 @@ but got this error: '{result.stderr}'
 
 Having this error in mind, fix my original command of '{proposed_command}' or give me a new command to solve: '{instructions}'"""
         
-        
+
         rich.print(Panel(Text("Thinking...", style="white"), title="Claix", expand=False, border_style="purple"))
         proposed_solution = bot(error_prompt)
 
