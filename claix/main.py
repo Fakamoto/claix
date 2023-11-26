@@ -1,119 +1,137 @@
 # src/main.py
+from typing import Literal
 from claix import __version__
 from claix.bot import Bot
-from claix.utils import get_or_create_default_assistant_id, get_or_create_default_thread_id, run_shell_command, simulate_clear
-
-import rich
-from rich.panel import Panel
-from rich.text import Text
-from rich.console import Console
-
+from claix.utils import get_or_create_default_assistant_id, get_or_create_default_thread_id, run_shell_command
+from enum import Enum, auto
+import inquirer
 import typer
 
-
 app = typer.Typer(name="claix", no_args_is_help=True, add_completion=False)
-console = Console()
-        
+
+
+
+class Action(Enum):
+    RUN = auto()
+    REVISE = auto()
+    EXIT = auto()
+
+    def __str__(self):
+        # Return the string representation for the prompt
+        emojis = {
+            Action.RUN: "\U00002705 Run Command",
+            Action.REVISE: "\U0001F4DD Revise Command",
+            Action.EXIT: "\U0000274C Exit",
+        }
+        return emojis[self]
+
+
+def prompt_action() -> Action:
+    questions = [
+        inquirer.List('action',
+                      message="Choose an action",
+                      choices=list(Action),
+                      ),
+    ]
+    action_response = inquirer.prompt(questions, raise_keyboard_interrupt=True)['action']
+    return action_response
+
 # Version callback
 def version_callback(show_version: bool):
     if show_version:
         typer.echo(__version__)
         raise typer.Exit()
 
-
 @app.command(help="Turns your instructions into CLI commands ready to execute.")
-def main(instructions: list[str] = typer.Argument(None, help="The instructions that you want to execute. Pass them as a list of strings.", ), show_version: bool = typer.Option(None, "--version", "-v", callback=version_callback, is_eager=True, help="Show the version and exit.", ),):
-    """
-    Claix is a command line assistant that helps you translate instructions into CLI commands.
-
-    Example: claix list all docker containers
-
-    You can give it a set of instructions, and it will attempt to generate
-    the appropriate command-line commands to execute.
-
-    Args:
-    instructions: Your instructions as text.
-    """
-    simulate_clear(console)
+def main(instructions: list[str] = typer.Argument(None, help="The instructions that you want to execute. Pass them as a list of strings."),
+         show_version: bool = typer.Option(None, "--version", "-v", callback=version_callback, is_eager=True, help="Show the version and exit."),
+         ):
     if not instructions:
-        # If no instructions are provided, display a helpful message and an example usage
-        error_message = Text("No instructions provided. Claix needs a set of instructions to generate commands.", style="white")
-        example_usage = Text("Example usage:\nclaix list all docker containers\nclaix show me active network interfaces", style="white")
-        rich.print(Panel(error_message, title="[bold]Error[/bold]", expand=False, border_style="red"))
-        rich.print(Panel(example_usage, title="[bold]Example Usage[/bold]", expand=False, border_style="green"))
+        typer.echo(typer.style("Error:", fg=typer.colors.RED, bold=True))
+        typer.echo("No instructions provided. Claix needs a set of instructions to generate commands.\n")
+        typer.echo(typer.style("Example Usage:", fg=typer.colors.BLUE, bold=True))
+        typer.echo("claix list all docker containers\nclaix show me active network interfaces\n")
         return
-    instructions: str = " ".join(instructions)
-    rich.print(Panel(Text(instructions, style="white"), title="Instructions\U0001F4DD", expand=False, border_style="blue"))
+
+    instructions_str = " ".join(instructions)
+
     assistant_id = get_or_create_default_assistant_id()
     thread_id = get_or_create_default_thread_id()
 
     bot = Bot(assistant_id, thread_id)
     
-    rich.print(Panel(Text("Thinking...", style="white"), title="Claix", expand=False, border_style="purple"))
-    proposed_command: str = bot(instructions)
+    proposed_command = bot(instructions_str)
     if proposed_command == ".":
-        rich.print(Panel(Text("I don't know how to solve this problem, exiting", style="white"), title="Claix", expand=False, border_style="purple"))
+        typer.echo(typer.style("Claix Response:", fg=typer.colors.RED, bold=True))
+        typer.echo("I don't know how to solve this problem, exiting\n")
         return
-    rich.print(Panel(proposed_command, title="Command\U0001F4BB", expand=False, border_style="green", padding=(1, 2)))
 
-    # Ask if user wants Claix to run the command
-    prompt_text = Text("Run command? Press Enter to run or [Y/n]", style="white", end="")
-    rich.print(Panel(prompt_text, title="Action\u2757", expand=False, border_style="yellow"), end="")
-    run_command_input = input()
-    run_command = run_command_input.lower() in ["y", "yes", ""]
-    simulate_clear(console)
+    typer.echo(typer.style("Proposed Command:", fg=typer.colors.GREEN, bold=True))
+    typer.echo(f"{proposed_command}\n")
+    
+    user_action = prompt_action()
 
-    if not run_command:
+    if user_action == Action.EXIT:
+        typer.echo("Exiting Claix.\n")
         return
     
-    result = run_shell_command(proposed_command)
+    elif user_action == Action.REVISE:
+        # Implement revise command logic
+        typer.echo("Revision needed for the command.\n")
+        return
 
-    error_iterations = 0
-    while result.returncode != 0:
-        if error_iterations > 2:
-            simulate_clear(console)
-            rich.print(Panel(Text("Too many errors, exiting", style="white"), title="Error", expand=False, border_style="red"))
-            break
+    elif user_action == Action.RUN:
+        result = run_shell_command(proposed_command)
+        error_iterations = 0
 
-        rich.print(Panel(Text(instructions, style="white"), title="Instructions\U0001F4DD", expand=False, border_style="blue"))
-        rich.print(Panel(Text(f"Error iteration {error_iterations}", style="white"), title="Error iteration", expand=False, border_style="red"))
-        rich.print(Panel(result.stderr, title="Error", expand=False, border_style="red"))
-        error_prompt = \
-f"""I want to: '{instructions}'
-I tried '{proposed_command}'
-but got this error: '{result.stderr}'
+        while result.returncode != 0:
+            if error_iterations > 2:
+                typer.echo(typer.style("Error:", fg=typer.colors.RED, bold=True))
+                typer.echo("Too many errors, exiting\n")
+                break
 
-Having this error in mind, fix my original command of '{proposed_command}' or give me a new command to solve: '{instructions}'"""
-        
+            typer.echo(typer.style(f"Error iteration {error_iterations}:", fg=typer.colors.RED))
+            typer.echo(f"{result.stderr}\n")
 
-        rich.print(Panel(Text("Thinking...", style="white"), title="Claix", expand=False, border_style="purple"))
-        proposed_solution = bot(error_prompt)
+            error_prompt = (
+                f"I want to: '{instructions_str}'\n"
+                f"I tried '{proposed_command}'\n"
+                f"but got this error: '{result.stderr}'\n\n"
+                f"Having this error in mind, fix my original command of '{proposed_command}' "
+                f"or give me a new command to solve: '{instructions_str}'"
+            )
+            
+            proposed_solution = bot(error_prompt)
 
-        if proposed_solution == ".":
-            rich.print(Panel(Text("I don't know how to solve this problem, exiting", style="white"), title="Claix", expand=False, border_style="purple"))
-            return
+            if proposed_solution == ".":
+                typer.echo(typer.style("Claix Response:", fg=typer.colors.RED, bold=True))
+                typer.echo("I don't know how to solve this problem, exiting\n")
+                return
 
-        rich.print(Panel(proposed_solution, title="Command\U0001F4BB", expand=False, border_style="green", padding=(1, 2)))
-        # Ask if user wants Claix to run the command
-        prompt_text = Text("Run command? Press Enter to run or [Y/n]", style="white", end="")
-        rich.print(Panel(prompt_text, title="Action\u2757", expand=False, border_style="yellow"), end="")
-        run_command_input = input()
-        run_command = run_command_input.lower() in ["y", "yes", ""]
-        simulate_clear(console)
+            typer.echo(typer.style("Proposed Solution:", fg=typer.colors.GREEN, bold=True))
+            typer.echo(f"{proposed_solution}\n")
 
-        if not run_command:
-            return
-        
-        result = run_shell_command(proposed_solution)
-        error_iterations += 1
+            user_action = prompt_action()
 
-    else:
-        simulate_clear(console)
-        # success
-        if result.stdout:
-            rich.print(Panel(result.stdout, title="Output", expand=False, border_style="blue"))
+            if user_action == Action.EXIT:
+                typer.echo("Exiting Claix.\n")
+                return
+            
+            elif user_action == Action.REVISE:
+                # Implement revise command logic
+                typer.echo("Revision needed for the command.\n")
+                return
+            
+            elif user_action == Action.RUN:
+                result = run_shell_command(proposed_solution)
+                error_iterations += 1
 
-
+        if result.returncode == 0:
+            if result.stdout:
+                typer.echo(typer.style("Output:", fg=typer.colors.BLUE, bold=True))
+                typer.echo(f"{result.stdout}")
+            else:
+                typer.echo(typer.style("No output.", fg=typer.colors.BLUE, bold=True))
 
 if __name__ == "__main__":
     app()
