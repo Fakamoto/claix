@@ -10,17 +10,20 @@
 - **User Convenience**: Eliminates the need for copy-pasting from web browsers.
 - **Adaptive Solutions**: Generates alternative commands based on the context of encountered errors.
 
+## Prerequisites
+
+- Python 3.6+ and an active internet connection.
+- `OPENAI_API_KEY` environment variable set up.
+- Access to the `gpt-4-1106-preview` model.
+
+  
 ## Installation
 
 ```bash
 pip install claix
 ```
 
-## Prerequisites
 
-- Python 3.6+ and an active internet connection.
-- `OPENAI_API_KEY` environment variable set up.
-- Access to the `gpt-4-1106-preview` model.
 
 
 ## Usage Examples
