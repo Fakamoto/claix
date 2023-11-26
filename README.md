@@ -20,7 +20,7 @@
 ## Installation
 
 ```bash
-pip install claix
+pip install --upgrade claix
 ```
 
 
