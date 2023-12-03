@@ -1,5 +1,6 @@
-from openai import OpenAI
 import time
+
+from openai import OpenAI
 
 
 class Bot:
@@ -8,10 +9,10 @@ class Bot:
         self.thread_id = thread_id
         self.client = OpenAI()
 
-    def __call__(self, prompt, thread_id = None):
+    def __call__(self, prompt, thread_id=None):
         if not thread_id:
             thread_id = self.thread_id
-            
+
         self.create_thread_message(prompt, thread_id)
 
         run = self.run_thread(thread_id)
@@ -19,6 +20,35 @@ class Bot:
         run = self.wait_for_run(run)
 
         return self.get_last_message(thread_id)
+    
+    
+    
+    def get_fixed_command(self, instructions: str, proposed_command: str, command_run_result):
+        error_prompt = (
+            f"I want to: '{instructions}'\n"
+            f"I tried '{proposed_command}'\n"
+            f"but got this error: '{command_run_result.stderr}'\n\n"
+            f"Having this error in mind, fix my original command of '{proposed_command}' "
+            f"or give me a new command to solve: '{instructions}'"
+        )
+
+        proposed_solution = self(error_prompt)
+
+        return proposed_solution
+    
+    def get_revised_command(self, revision_instructions: str, original_instructions: str, proposed_command: str) -> str:
+        revision_prompt = (
+            f"I want to: {original_instructions}\n"
+            f"The proposed solution was: {proposed_command}\n\n"
+            f"but I want to modify this solution considering this: {revision_instructions}\n\n"
+            f"please give me a new solution considering that"
+        )
+
+        revised_solution: str = self(revision_prompt)
+
+        return revised_solution
+
+
 
     @staticmethod
     def create_assistant(
@@ -35,7 +65,6 @@ class Bot:
             model=model,
         )
         return assistant
-    
 
     @staticmethod
     def create_thread():
@@ -85,7 +114,7 @@ class Bot:
         if isinstance(file_ids, str):
             file_ids = [file_ids]
 
-        updated_assistant = self.client.beta.assistants.update(
+        self.client.beta.assistants.update(
             self.assistant_id,
             file_ids=file_ids,
         )
