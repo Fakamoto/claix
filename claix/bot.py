@@ -20,10 +20,10 @@ class Bot:
         run = self.wait_for_run(run)
 
         return self.get_last_message(thread_id)
-    
-    
-    
-    def get_fixed_command(self, instructions: str, proposed_command: str, command_run_result):
+
+    def get_fixed_command(
+        self, instructions: str, proposed_command: str, command_run_result
+    ):
         error_prompt = (
             f"I want to: '{instructions}'\n"
             f"I tried '{proposed_command}'\n"
@@ -35,8 +35,13 @@ class Bot:
         proposed_solution = self(error_prompt)
 
         return proposed_solution
-    
-    def get_revised_command(self, revision_instructions: str, original_instructions: str, proposed_command: str) -> str:
+
+    def get_revised_command(
+        self,
+        revision_instructions: str,
+        original_instructions: str,
+        proposed_command: str,
+    ) -> str:
         revision_prompt = (
             f"I want to: {original_instructions}\n"
             f"The proposed solution was: {proposed_command}\n\n"
@@ -47,8 +52,6 @@ class Bot:
         revised_solution: str = self(revision_prompt)
 
         return revised_solution
-
-
 
     @staticmethod
     def create_assistant(

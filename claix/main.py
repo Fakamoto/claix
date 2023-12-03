@@ -1,5 +1,5 @@
-# claix/main.py
-
+from enum import Enum, auto
+import typer
 from claix.bot import Bot
 from claix.typer_utils import (
     version_callback,
@@ -7,23 +7,29 @@ from claix.typer_utils import (
     openai_api_key_callback,
 )
 from claix.utils import (
-    Action,
     get_or_create_default_assistant_id,
     get_or_create_default_thread_id,
-    prompt_action,
+    ask_user_if_run_revise_or_exit,
     run_shell_command,
+    Action,
 )
-
 from rich.console import Console
-
-import typer
 
 app = typer.Typer(name="claix", no_args_is_help=True, add_completion=False)
 
 
+class State(Enum):
+    PROCESS_INSTRUCTIONS = auto()
+    GATHER_REVISION = auto()
+    USER_DECISION = auto()
+    RUN_COMMAND = auto()
+    HANDLE_FAILURE = auto()
+    EXIT = auto()
+
+
 @app.command(help="Turns your instructions into CLI commands ready to execute.")
 def main(
-    instructions: list[str] = typer.Argument(
+    initial_instructions: list[str] = typer.Argument(
         None,
         callback=instructions_callback,
         help="The instructions that you want to execute.",
@@ -44,102 +50,112 @@ def main(
         help="The OpenAI API key.",
     ),
 ):
-    instructions = " ".join(instructions)
-    
+    instructions = " ".join(initial_instructions)
+    proposed_command = None
+    error_iterations = 0
+
     assistant_id = get_or_create_default_assistant_id()
     thread_id = get_or_create_default_thread_id()
 
     console = Console()
-
     bot = Bot(assistant_id, thread_id)
+    state = State.PROCESS_INSTRUCTIONS
 
-    with console.status("Processing...", spinner="dots"):
-        # Process instructions and get proposed command
-        proposed_command = bot(instructions)
-        pass
+    start = True
+    while state != State.EXIT:
+        if state == State.PROCESS_INSTRUCTIONS:
+            with console.status("Thinking...", spinner="dots"):
+                if start:
+                    proposed_command = "docker ps --a"
+                    start = False
+                else:
+                    proposed_command = bot(instructions)
 
-    if proposed_command == ".":
-        typer.echo(typer.style("Claix Response:", fg=typer.colors.RED, bold=True))
-        typer.echo("I don't know how to solve this problem, exiting\n")
-        return
+            if proposed_command == ".":
+                typer.echo(
+                    typer.style(
+                        "Claix Response: I don't know how to solve this problem, exiting",
+                        fg=typer.colors.RED,
+                        bold=True,
+                    )
+                )
+                state = State.EXIT
+            else:
+                typer.echo(
+                    typer.style("Proposed Command:", fg=typer.colors.GREEN, bold=True)
+                )
+                typer.echo(f"{proposed_command}\n")
+                state = State.USER_DECISION
 
-    # show proposed command
-    typer.echo(typer.style("Proposed Command:", fg=typer.colors.GREEN, bold=True))
-    typer.echo(f"{proposed_command}\n")
+        elif state == State.USER_DECISION:
+            user_action = ask_user_if_run_revise_or_exit()
+            if user_action == Action.EXIT:
+                state = State.EXIT
+            elif user_action == Action.REVISE:
+                state = State.GATHER_REVISION
+            elif user_action == Action.RUN:
+                state = State.RUN_COMMAND
 
-    user_action: Action = prompt_action()
+        elif state == State.GATHER_REVISION:
+            instructions = typer.prompt("Enter your revision")
+            state = State.PROCESS_INSTRUCTIONS
 
-    if user_action == Action.EXIT:
-        typer.echo("Exiting Claix.\n")
-        return
+        elif state == State.RUN_COMMAND:
+            with console.status("Running command...", spinner="dots"):
+                command_run_result = run_shell_command(proposed_command)
+            if command_run_result.returncode == 0:
+                if command_run_result.stdout:
+                    typer.echo(typer.style("Output:", fg=typer.colors.BLUE, bold=True))
+                    typer.echo(command_run_result.stdout)
+                else:
+                    typer.echo(
+                        typer.style("No output.", fg=typer.colors.BLUE, bold=True)
+                    )
+                state = State.EXIT
+            else:
+                typer.echo(
+                    typer.style("Command failed...", fg=typer.colors.RED, bold=True)
+                )
+                state = State.HANDLE_FAILURE
+                error_iterations = 0
 
-    elif user_action == Action.REVISE:
-        typer.echo(typer.style("Revision Needed:", fg=typer.colors.YELLOW, bold=True))
-        typer.echo("Please provide more details or alternative instructions to improve the proposed solution.")
-        
-        revision_instructions = typer.prompt("Enter your revised instructions: ")
-        revised_command = bot.get_revised_command(revision_instructions)
-        # chatgpt look here!
-        # JUMP TO show proposed command
-        # as python doesn't support tail recursion, we need to use a different solution
-        # chatgpt look here!
-    
-    elif user_action == Action.RUN:
-        command_run_result = run_shell_command(proposed_command)
-        error_iterations = 0
-        
-
-        while command_run_result.returncode != 0:
-            # COMMAND FAILED
-
+        elif state == State.HANDLE_FAILURE:
             if error_iterations > 2:
-                typer.echo(typer.style("Error:", fg=typer.colors.RED, bold=True))
-                typer.echo("Too many errors, exiting\n")
+                typer.echo(
+                    typer.style(
+                        "Too many errors, exiting", fg=typer.colors.RED, bold=True
+                    )
+                )
+                state = State.EXIT
                 break
-
-            typer.echo(
-                typer.style(f"Error iteration {error_iterations}:", fg=typer.colors.RED)
-            )
-            typer.echo(f"{command_run_result.stderr}\n")
-
-
-            proposed_solution: str = bot.get_fixed_command(instructions, proposed_command, command_run_result)
-
+            with console.status("Thinking", spinner="dots"):
+                proposed_solution = bot.get_fixed_command(
+                    instructions, proposed_command, command_run_result
+                )
             if proposed_solution == ".":
                 typer.echo(
-                    typer.style("Claix Response:", fg=typer.colors.RED, bold=True)
+                    typer.style(
+                        "Claix Response: I don't know how to solve this problem, exiting",
+                        fg=typer.colors.RED,
+                        bold=True,
+                    )
                 )
-                typer.echo("I don't know how to solve this problem, exiting\n")
-                return
-
-            typer.echo(
-                typer.style("Proposed Solution:", fg=typer.colors.GREEN, bold=True)
-            )
-            typer.echo(f"{proposed_solution}\n")
-
-            user_action = prompt_action()
-
-            if user_action == Action.EXIT:
-                typer.echo("Exiting Claix.\n")
-                return
-
-            elif user_action == Action.REVISE:
-                typer.echo(typer.style("Revision Needed:", fg=typer.colors.YELLOW, bold=True))
-                typer.echo("Please provide more details or alternative instructions to improve the proposed solution.")
-                
-                revision_instructions = typer.prompt("Enter your revised instructions: ")
-                command_run_result = bot.get_revised_command(revision_instructions)
-
-            elif user_action == Action.RUN:
-                command_run_result = run_shell_command(proposed_solution)
-                error_iterations += 1
-
-        if command_run_result.returncode == 0:
-            if command_run_result.stdout:
-                typer.echo(typer.style("Output:", fg=typer.colors.BLUE, bold=True))
-                typer.echo(f"{command_run_result.stdout}")
+                state = State.EXIT
             else:
-                typer.echo(typer.style("No output.", fg=typer.colors.BLUE, bold=True))
+                typer.echo(
+                    typer.style("Proposed Solution:", fg=typer.colors.GREEN, bold=True)
+                )
+                typer.echo(f"{proposed_solution}\n")
+
+                user_action = ask_user_if_run_revise_or_exit()
+                if user_action == Action.EXIT:
+                    state = State.EXIT
+                elif user_action == Action.REVISE:
+                    state = State.GATHER_REVISION
+                elif user_action == Action.RUN:
+                    proposed_command = proposed_solution
+                    state = State.RUN_COMMAND
+                    error_iterations += 1
 
 
 if __name__ == "__main__":

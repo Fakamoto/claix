@@ -30,7 +30,7 @@ class Action(Enum):
         return emojis[self]
 
 
-def prompt_action() -> Action:
+def ask_user_if_run_revise_or_exit() -> Action:
     questions = [
         inquirer.List(
             "action",
@@ -41,7 +41,7 @@ def prompt_action() -> Action:
     action_response = inquirer.prompt(questions, raise_keyboard_interrupt=True)[
         "action"
     ]
-    
+
     return Action(action_response)
 
 
