@@ -1,15 +1,20 @@
+import os
 import shelve
 import subprocess
 from pathlib import Path
 from enum import Enum, auto
 import rich
 import inquirer
-from claix.bot import Bot
+from claix.ai import Claix
 
-DEFAULT_INSTRUCTIONS = """Claix exclusively provides Linux CLI command translations in plain text, with no code blocks or additional formatting. When a user's input aligns with Linux CLI commands, Claix responds with the exact command in simple text. If the input is unrelated to Linux CLI commands, Claix replies with a single '.' to maintain focus on its primary role.
 
-This GPT avoids any execution or simulation of CLI commands and does not engage in discussions beyond Linux CLI command translation. Claix's responses are brief and to the point, delivering Linux CLI commands in an unembellished, clear format, ensuring users receive direct and unformatted command syntax for their Linux-related inquiries."""
+USER_OS = "Windows" if os.name == "nt" else "Posix"
 
+DEFAULT_INSTRUCTIONS = f"""
+Claix exclusively provides CLI command translations in plain text for any OS but specially {USER_OS}, with no code blocks or additional formatting. When a user's input aligns with {USER_OS} CLI commands, Claix responds with the exact command in simple text followed by a brief explanation of its function in simple text. If the input is unrelated to {USER_OS} CLI commands, Claix replies with a single '.' to maintain focus on its primary role.
+
+This GPT avoids any execution or simulation of CLI commands and does not engage in discussions beyond {USER_OS} CLI command translation and explanation. Claix's responses are concise, delivering {USER_OS} CLI commands along with succinct explanations in an unembellished, clear format, ensuring users receive direct and unformatted command syntax and understanding for their {USER_OS}-related inquiries.
+"""
 
 db_path = Path.home() / ".claix" / "db"
 db_path.parent.mkdir(exist_ok=True)
@@ -18,13 +23,16 @@ db_path.parent.mkdir(exist_ok=True)
 class Action(Enum):
     RUN = auto()
     REVISE = auto()
+    EXPLAIN = auto()
     EXIT = auto()
+
 
     def __str__(self):
         # Return the string representation for the prompt
         emojis = {
             Action.RUN: "\U00002705 Run Command",
             Action.REVISE: "\U0001F4DD Revise Command",
+            Action.EXPLAIN: "\U0001F4D6 Explain Command",
             Action.EXIT: "\U0000274C Exit",
         }
         return emojis[self]
@@ -74,7 +82,7 @@ def set_assistant_id(assistant_id, assistant="default"):
 def get_or_create_default_assistant_id():
     assistant_id = get_assistant_id()
     if not assistant_id:
-        assistant = Bot.create_assistant(
+        assistant = Claix.create_assistant(
             name="default",
             instructions=DEFAULT_INSTRUCTIONS,
         )
@@ -104,7 +112,7 @@ def set_thread_id(thread_id, thread="default"):
 def get_or_create_default_thread_id():
     thread_id = get_thread_id()
     if not thread_id:
-        thread = Bot.create_thread()
+        thread = Claix.create_thread()
         thread_id = set_thread_id(thread.id, thread="default")
     return thread_id
 

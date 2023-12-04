@@ -1,9 +1,26 @@
 import time
-
+from typing import Optional
+import instructor
+from pydantic import BaseModel
 from openai import OpenAI
 
 
-class Bot:
+class ClaixCommand(BaseModel):
+    """
+    A model describing important attributes of a CLI command.
+
+    Attributes:
+        is_command (bool): True if the response is a command, False otherwise 
+            (e.g., if the output is a dot or is empty).
+        command (Optional[str]): The string command to execute.
+        explanation (Optional[str]): The explanation of the command.
+    """
+    is_command: bool
+    command: Optional[str]
+    explanation: Optional[str]
+
+
+class Claix:
     def __init__(self, assistant_id: str, thread_id: str = None):
         self.assistant_id = assistant_id
         self.thread_id = thread_id
@@ -19,11 +36,18 @@ class Bot:
 
         run = self.wait_for_run(run)
 
-        return self.get_last_message(thread_id)
+        text_response: str = self.get_last_message(thread_id)
+
+        claix_command: ClaixCommand = self.populate_model_from_text(ClaixCommand, text_response)
+
+        if not claix_command.command:
+            claix_command.is_command = False
+
+        return claix_command
 
     def get_fixed_command(
         self, instructions: str, proposed_command: str, command_run_result
-    ):
+    ) -> ClaixCommand:
         error_prompt = (
             f"I want to: '{instructions}'\n"
             f"I tried '{proposed_command}'\n"
@@ -32,9 +56,9 @@ class Bot:
             f"or give me a new command to solve: '{instructions}'"
         )
 
-        proposed_solution = self(error_prompt)
+        command: ClaixCommand = self(error_prompt)
 
-        return proposed_solution
+        return command
 
     def get_revised_command(
         self,
@@ -74,6 +98,20 @@ class Bot:
         client = OpenAI()
         thread = client.beta.threads.create()
         return thread
+
+    @staticmethod
+    def populate_model_from_text(model: BaseModel, text: str) -> BaseModel:
+        client = instructor.patch(OpenAI())
+        """Populates a pydantic model from a text."""
+        response: model = client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            response_model=model,
+            messages=[
+                {"role": "user", "content": text},
+            ],
+            max_retries=3,
+        )
+        return response
 
     def create_thread_message(self, prompt: str, thread_id: str):
         message = self.client.beta.threads.messages.create(

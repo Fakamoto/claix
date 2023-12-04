@@ -107,6 +107,17 @@ files = [
 ]
 
 [[package]]
+name = "docstring-parser"
+version = "0.15"
+description = "Parse Python docstrings in reST, Google and Numpydoc format"
+optional = false
+python-versions = ">=3.6,<4.0"
+files = [
+    {file = "docstring_parser-0.15-py3-none-any.whl", hash = "sha256:d1679b86250d269d06a99670924d6bce45adc00b08069dae8c47d98e89b667a9"},
+    {file = "docstring_parser-0.15.tar.gz", hash = "sha256:48ddc093e8b1865899956fcc03b03e66bb7240c310fac5af81814580c55bf682"},
+]
+
+[[package]]
 name = "exceptiongroup"
 version = "1.1.3"
 description = "Backport of PEP 654 (exception groups)"
@@ -202,6 +213,23 @@ files = [
 blessed = ">=1.19.0"
 python-editor = ">=1.0.4"
 readchar = ">=3.0.6"
+
+[[package]]
+name = "instructor"
+version = "0.4.0"
+description = "Helper functions that allow us to improve openai's function_call ergonomics"
+optional = false
+python-versions = ">=3.9,<4.0"
+files = [
+    {file = "instructor-0.4.0-py3-none-any.whl", hash = "sha256:56d9bc24101f9f903e046646cebe71160bbbd49a365dac65cc1f64bf9eea63ff"},
+    {file = "instructor-0.4.0.tar.gz", hash = "sha256:88dd145f989893619db645d2c3cad55e066c9ac26c2ea54fb8ebb3686e6507fe"},
+]
+
+[package.dependencies]
+docstring-parser = ">=0.15,<0.16"
+openai = ">=1.1.0,<2.0.0"
+pydantic = ">=2.0.2,<3.0.0"
+typer = ">=0.9.0,<0.10.0"
 
 [[package]]
 name = "jinxed"
@@ -587,4 +615,4 @@ files = [
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.10"
-content-hash = "ae749f32be72be4246f3621748ce49176cf2afbbcf7a58f21e262250b2c51e9e"
+content-hash = "9b96bc2ca70a463bff16f935b99ed3b9180e3581b8d71a31bd51e35ed1b9d449"

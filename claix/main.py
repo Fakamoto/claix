@@ -1,6 +1,6 @@
 from enum import Enum, auto
 import typer
-from claix.bot import Bot
+from claix.ai import Claix, ClaixCommand
 from claix.typer_utils import (
     version_callback,
     instructions_callback,
@@ -11,6 +11,7 @@ from claix.utils import (
     get_or_create_default_thread_id,
     ask_user_if_run_revise_or_exit,
     run_shell_command,
+    simulate_clear,
     Action,
 )
 from rich.console import Console
@@ -21,6 +22,7 @@ app = typer.Typer(name="claix", no_args_is_help=True, add_completion=False)
 class State(Enum):
     PROCESS_INSTRUCTIONS = auto()
     GATHER_REVISION = auto()
+    PRINT_EXPLANATION = auto()
     USER_DECISION = auto()
     RUN_COMMAND = auto()
     HANDLE_FAILURE = auto()
@@ -51,27 +53,22 @@ def main(
     ),
 ):
     instructions = " ".join(initial_instructions)
-    proposed_command = None
     error_iterations = 0
 
     assistant_id = get_or_create_default_assistant_id()
     thread_id = get_or_create_default_thread_id()
 
     console = Console()
-    bot = Bot(assistant_id, thread_id)
+    claix = Claix(assistant_id, thread_id)
     state = State.PROCESS_INSTRUCTIONS
 
     start = True
     while state != State.EXIT:
         if state == State.PROCESS_INSTRUCTIONS:
             with console.status("Thinking...", spinner="dots"):
-                if start:
-                    proposed_command = "docker ps --a"
-                    start = False
-                else:
-                    proposed_command = bot(instructions)
+                claix_command: ClaixCommand = claix(instructions)
 
-            if proposed_command == ".":
+            if not claix_command.is_command:
                 typer.echo(
                     typer.style(
                         "Claix Response: I don't know how to solve this problem, exiting",
@@ -84,15 +81,18 @@ def main(
                 typer.echo(
                     typer.style("Proposed Command:", fg=typer.colors.GREEN, bold=True)
                 )
-                typer.echo(f"{proposed_command}\n")
+                typer.echo(f"{claix_command.command}\n")
                 state = State.USER_DECISION
 
         elif state == State.USER_DECISION:
             user_action = ask_user_if_run_revise_or_exit()
+            #simulate_clear(console)
             if user_action == Action.EXIT:
                 state = State.EXIT
             elif user_action == Action.REVISE:
                 state = State.GATHER_REVISION
+            elif user_action == Action.EXPLAIN:
+                state = State.PRINT_EXPLANATION
             elif user_action == Action.RUN:
                 state = State.RUN_COMMAND
 
@@ -100,9 +100,16 @@ def main(
             instructions = typer.prompt("Enter your revision")
             state = State.PROCESS_INSTRUCTIONS
 
+        elif state == State.PRINT_EXPLANATION:
+            typer.echo(
+                typer.style("Explanation:", fg=typer.colors.BLUE, bold=True)
+            )
+            typer.echo(f"{claix_command.explanation}\n")
+            state = State.USER_DECISION
+
         elif state == State.RUN_COMMAND:
             with console.status("Running command...", spinner="dots"):
-                command_run_result = run_shell_command(proposed_command)
+                command_run_result = run_shell_command(claix_command.command)
             if command_run_result.returncode == 0:
                 if command_run_result.stdout:
                     typer.echo(typer.style("Output:", fg=typer.colors.BLUE, bold=True))
@@ -129,10 +136,10 @@ def main(
                 state = State.EXIT
                 break
             with console.status("Thinking", spinner="dots"):
-                proposed_solution = bot.get_fixed_command(
-                    instructions, proposed_command, command_run_result
+                claix_command: ClaixCommand = claix.get_fixed_command(
+                    instructions, claix_command.command, command_run_result
                 )
-            if proposed_solution == ".":
+            if not claix_command.is_command:
                 typer.echo(
                     typer.style(
                         "Claix Response: I don't know how to solve this problem, exiting",
@@ -145,15 +152,17 @@ def main(
                 typer.echo(
                     typer.style("Proposed Solution:", fg=typer.colors.GREEN, bold=True)
                 )
-                typer.echo(f"{proposed_solution}\n")
+                typer.echo(f"{claix_command.command}\n")
 
                 user_action = ask_user_if_run_revise_or_exit()
+                #simulate_clear(console)
                 if user_action == Action.EXIT:
                     state = State.EXIT
                 elif user_action == Action.REVISE:
                     state = State.GATHER_REVISION
+                elif user_action == Action.EXPLAIN:
+                    state = State.PRINT_EXPLANATION
                 elif user_action == Action.RUN:
-                    proposed_command = proposed_solution
                     state = State.RUN_COMMAND
                     error_iterations += 1
 
