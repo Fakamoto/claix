@@ -1,27 +1,63 @@
+import os
 import shelve
 import subprocess
 from pathlib import Path
+from enum import Enum, auto
 import rich
-from claix.bot import Bot
-
-DEFAULT_INSTRUCTIONS = """Claix exclusively provides Linux CLI command translations in plain text, with no code blocks or additional formatting. When a user's input aligns with Linux CLI commands, Claix responds with the exact command in simple text. If the input is unrelated to Linux CLI commands, Claix replies with a single '.' to maintain focus on its primary role.
-
-This GPT avoids any execution or simulation of CLI commands and does not engage in discussions beyond Linux CLI command translation. Claix's responses are brief and to the point, delivering Linux CLI commands in an unembellished, clear format, ensuring users receive direct and unformatted command syntax for their Linux-related inquiries."""
+import inquirer
+from claix.ai import Claix
 
 
-db_path = Path.home() / '.claix' / 'db'
+USER_OS = "Windows" if os.name == "nt" else "Posix"
+
+DEFAULT_INSTRUCTIONS = f"""
+Claix exclusively provides CLI command translations in plain text for any OS but specially {USER_OS}, with no code blocks or additional formatting. When a user's input aligns with {USER_OS} CLI commands, Claix responds with the exact command in simple text followed by a brief explanation of its function in simple text. If the input is unrelated to {USER_OS} CLI commands, Claix replies with a single '.' to maintain focus on its primary role.
+
+This GPT avoids any execution or simulation of CLI commands and does not engage in discussions beyond {USER_OS} CLI command translation and explanation. Claix's responses are concise, delivering {USER_OS} CLI commands along with succinct explanations in an unembellished, clear format, ensuring users receive direct and unformatted command syntax and understanding for their {USER_OS}-related inquiries.
+"""
+
+db_path = Path.home() / ".claix" / "db"
 db_path.parent.mkdir(exist_ok=True)
 
 
+class Action(Enum):
+    RUN = auto()
+    REVISE = auto()
+    EXPLAIN = auto()
+    EXIT = auto()
+
+
+    def __str__(self):
+        # Return the string representation for the prompt
+        emojis = {
+            Action.RUN: "\U00002705 Run Command",
+            Action.REVISE: "\U0001F4DD Revise Command",
+            Action.EXPLAIN: "\U0001F4D6 Explain Command",
+            Action.EXIT: "\U0000274C Exit",
+        }
+        return emojis[self]
+
+
+def ask_user_if_run_revise_or_exit() -> Action:
+    questions = [
+        inquirer.List(
+            "action",
+            message="Choose an action",
+            choices=list(Action),
+        ),
+    ]
+    action_response = inquirer.prompt(questions, raise_keyboard_interrupt=True)[
+        "action"
+    ]
+
+    return Action(action_response)
+
 
 def run_shell_command(command):
-    result = subprocess.run(command, 
-                            stdout=subprocess.PIPE, 
-                            stderr=subprocess.PIPE, 
-                            text=True, 
-                            shell=True)
-    return result
-
+    command_run_result = subprocess.run(
+        command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, shell=True
+    )
+    return command_run_result
 
 
 def get_assistant_id(assistant: str = "default"):
@@ -46,13 +82,12 @@ def set_assistant_id(assistant_id, assistant="default"):
 def get_or_create_default_assistant_id():
     assistant_id = get_assistant_id()
     if not assistant_id:
-        assistant = Bot.create_assistant(
+        assistant = Claix.create_assistant(
             name="default",
             instructions=DEFAULT_INSTRUCTIONS,
         )
         assistant_id = set_assistant_id(assistant.id, assistant="default")
     return assistant_id
-
 
 
 def get_thread_id(thread: str = "default"):
@@ -61,7 +96,8 @@ def get_thread_id(thread: str = "default"):
             return db["threads"][thread]["id"]
         except KeyError:
             return None
-        
+
+
 def set_thread_id(thread_id, thread="default"):
     with shelve.open(str(db_path)) as db:
         threads = db.get("threads", {})
@@ -72,13 +108,13 @@ def set_thread_id(thread_id, thread="default"):
             db["threads"] = {thread: {"id": thread_id}}
     return thread_id
 
+
 def get_or_create_default_thread_id():
     thread_id = get_thread_id()
     if not thread_id:
-        thread = Bot.create_thread()
+        thread = Claix.create_thread()
         thread_id = set_thread_id(thread.id, thread="default")
     return thread_id
-
 
 
 def simulate_clear(console: rich.console.Console):
@@ -87,5 +123,7 @@ def simulate_clear(console: rich.console.Console):
     then moves the cursor back to the top of the console window.
     """
     height = console.size.height
-    print("\n" * height, end='')  # Print newlines to push content out of view
-    print(f"\033[{height}A", end='')  # Move the cursor back up to the top of the console window
+    print("\n" * height, end="")  # Print newlines to push content out of view
+    print(
+        f"\033[{height}A", end=""
+    )  # Move the cursor back up to the top of the console window

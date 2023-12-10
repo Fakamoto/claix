@@ -1,118 +1,170 @@
-# src/main.py
-from claix import __version__
-from claix.bot import Bot
-from claix.utils import get_or_create_default_assistant_id, get_or_create_default_thread_id, run_shell_command, simulate_clear
-
-import rich
-from rich.panel import Panel
-from rich.text import Text
+from enum import Enum, auto
+import typer
+from claix.ai import Claix, ClaixCommand
+from claix.typer_utils import (
+    version_callback,
+    instructions_callback,
+    openai_api_key_callback,
+)
+from claix.utils import (
+    get_or_create_default_assistant_id,
+    get_or_create_default_thread_id,
+    ask_user_if_run_revise_or_exit,
+    run_shell_command,
+    simulate_clear,
+    Action,
+)
 from rich.console import Console
 
-import typer
-
-
 app = typer.Typer(name="claix", no_args_is_help=True, add_completion=False)
-console = Console()
-        
-# Version callback
-def version_callback(show_version: bool):
-    if show_version:
-        typer.echo(__version__)
-        raise typer.Exit()
+
+
+class State(Enum):
+    PROCESS_INSTRUCTIONS = auto()
+    GATHER_REVISION = auto()
+    PRINT_EXPLANATION = auto()
+    USER_DECISION = auto()
+    RUN_COMMAND = auto()
+    HANDLE_FAILURE = auto()
+    EXIT = auto()
 
 
 @app.command(help="Turns your instructions into CLI commands ready to execute.")
-def main(instructions: list[str] = typer.Argument(None, help="The instructions that you want to execute. Pass them as a list of strings.", ), show_version: bool = typer.Option(None, "--version", "-v", callback=version_callback, is_eager=True, help="Show the version and exit.", ),):
-    """
-    Claix is a command line assistant that helps you translate instructions into CLI commands.
+def main(
+    initial_instructions: list[str] = typer.Argument(
+        None,
+        callback=instructions_callback,
+        help="The instructions that you want to execute.",
+    ),
+    show_version: bool = typer.Option(
+        None,
+        "--version",
+        "-v",
+        callback=version_callback,
+        is_eager=True,
+        help="Show the version and exit.",
+    ),
+    openai_api_key: str = typer.Option(
+        None,
+        hidden=True,
+        callback=openai_api_key_callback,
+        envvar="OPENAI_API_KEY",
+        help="The OpenAI API key.",
+    ),
+):
+    instructions = " ".join(initial_instructions)
+    error_iterations = 0
 
-    Example: claix list all docker containers
-
-    You can give it a set of instructions, and it will attempt to generate
-    the appropriate command-line commands to execute.
-
-    Args:
-    instructions: Your instructions as text.
-    """
-    simulate_clear(console)
-    if not instructions:
-        # If no instructions are provided, display a helpful message and an example usage
-        error_message = Text("No instructions provided. Claix needs a set of instructions to generate commands.", style="white")
-        example_usage = Text("Example usage:\nclaix list all docker containers\nclaix show me active network interfaces", style="white")
-        rich.print(Panel(error_message, title="[bold]Error[/bold]", expand=False, border_style="red"))
-        rich.print(Panel(example_usage, title="[bold]Example Usage[/bold]", expand=False, border_style="green"))
-        return
-    instructions: str = " ".join(instructions)
-    rich.print(Panel(Text(instructions, style="white"), title="Instructions\U0001F4DD", expand=False, border_style="blue"))
     assistant_id = get_or_create_default_assistant_id()
     thread_id = get_or_create_default_thread_id()
 
-    bot = Bot(assistant_id, thread_id)
-    
-    rich.print(Panel(Text("Thinking...", style="white"), title="Claix", expand=False, border_style="purple"))
-    proposed_command: str = bot(instructions)
-    if proposed_command == ".":
-        rich.print(Panel(Text("I don't know how to solve this problem, exiting", style="white"), title="Claix", expand=False, border_style="purple"))
-        return
-    rich.print(Panel(proposed_command, title="Command\U0001F4BB", expand=False, border_style="green", padding=(1, 2)))
+    console = Console()
+    claix = Claix(assistant_id, thread_id)
+    state = State.PROCESS_INSTRUCTIONS
 
-    # Ask if user wants Claix to run the command
-    prompt_text = Text("Run command? Press Enter to run or [Y/n]", style="white", end="")
-    rich.print(Panel(prompt_text, title="Action\u2757", expand=False, border_style="yellow"), end="")
-    run_command_input = input()
-    run_command = run_command_input.lower() in ["y", "yes", ""]
-    simulate_clear(console)
+    start = True
+    while state != State.EXIT:
+        if state == State.PROCESS_INSTRUCTIONS:
+            with console.status("Thinking...", spinner="dots"):
+                claix_command: ClaixCommand = claix(instructions)
 
-    if not run_command:
-        return
-    
-    result = run_shell_command(proposed_command)
+            if not claix_command.is_command:
+                typer.echo(
+                    typer.style(
+                        "Claix Response: I don't know how to solve this problem, exiting",
+                        fg=typer.colors.RED,
+                        bold=True,
+                    )
+                )
+                state = State.EXIT
+            else:
+                typer.echo(
+                    typer.style("Proposed Command:", fg=typer.colors.GREEN, bold=True)
+                )
+                typer.echo(f"{claix_command.command}\n")
+                state = State.USER_DECISION
 
-    error_iterations = 0
-    while result.returncode != 0:
-        if error_iterations > 2:
-            simulate_clear(console)
-            rich.print(Panel(Text("Too many errors, exiting", style="white"), title="Error", expand=False, border_style="red"))
-            break
+        elif state == State.USER_DECISION:
+            user_action = ask_user_if_run_revise_or_exit()
+            #simulate_clear(console)
+            if user_action == Action.EXIT:
+                state = State.EXIT
+            elif user_action == Action.REVISE:
+                state = State.GATHER_REVISION
+            elif user_action == Action.EXPLAIN:
+                state = State.PRINT_EXPLANATION
+            elif user_action == Action.RUN:
+                state = State.RUN_COMMAND
 
-        rich.print(Panel(Text(instructions, style="white"), title="Instructions\U0001F4DD", expand=False, border_style="blue"))
-        rich.print(Panel(Text(f"Error iteration {error_iterations}", style="white"), title="Error iteration", expand=False, border_style="red"))
-        rich.print(Panel(result.stderr, title="Error", expand=False, border_style="red"))
-        error_prompt = \
-f"""I want to: '{instructions}'
-I tried '{proposed_command}'
-but got this error: '{result.stderr}'
+        elif state == State.GATHER_REVISION:
+            instructions = typer.prompt("Enter your revision")
+            state = State.PROCESS_INSTRUCTIONS
 
-Having this error in mind, fix my original command of '{proposed_command}' or give me a new command to solve: '{instructions}'"""
-        
+        elif state == State.PRINT_EXPLANATION:
+            typer.echo(
+                typer.style("Explanation:", fg=typer.colors.BLUE, bold=True)
+            )
+            typer.echo(f"{claix_command.explanation}\n")
+            state = State.USER_DECISION
 
-        rich.print(Panel(Text("Thinking...", style="white"), title="Claix", expand=False, border_style="purple"))
-        proposed_solution = bot(error_prompt)
+        elif state == State.RUN_COMMAND:
+            with console.status("Running command...", spinner="dots"):
+                command_run_result = run_shell_command(claix_command.command)
+            if command_run_result.returncode == 0:
+                if command_run_result.stdout:
+                    typer.echo(typer.style("Output:", fg=typer.colors.BLUE, bold=True))
+                    typer.echo(command_run_result.stdout)
+                else:
+                    typer.echo(
+                        typer.style("No output.", fg=typer.colors.BLUE, bold=True)
+                    )
+                state = State.EXIT
+            else:
+                typer.echo(
+                    typer.style("Command failed...", fg=typer.colors.RED, bold=True)
+                )
+                state = State.HANDLE_FAILURE
+                error_iterations = 0
 
-        if proposed_solution == ".":
-            rich.print(Panel(Text("I don't know how to solve this problem, exiting", style="white"), title="Claix", expand=False, border_style="purple"))
-            return
+        elif state == State.HANDLE_FAILURE:
+            if error_iterations > 2:
+                typer.echo(
+                    typer.style(
+                        "Too many errors, exiting", fg=typer.colors.RED, bold=True
+                    )
+                )
+                state = State.EXIT
+                break
+            with console.status("Thinking", spinner="dots"):
+                claix_command: ClaixCommand = claix.get_fixed_command(
+                    instructions, claix_command.command, command_run_result
+                )
+            if not claix_command.is_command:
+                typer.echo(
+                    typer.style(
+                        "Claix Response: I don't know how to solve this problem, exiting",
+                        fg=typer.colors.RED,
+                        bold=True,
+                    )
+                )
+                state = State.EXIT
+            else:
+                typer.echo(
+                    typer.style("Proposed Solution:", fg=typer.colors.GREEN, bold=True)
+                )
+                typer.echo(f"{claix_command.command}\n")
 
-        rich.print(Panel(proposed_solution, title="Command\U0001F4BB", expand=False, border_style="green", padding=(1, 2)))
-        # Ask if user wants Claix to run the command
-        prompt_text = Text("Run command? Press Enter to run or [Y/n]", style="white", end="")
-        rich.print(Panel(prompt_text, title="Action\u2757", expand=False, border_style="yellow"), end="")
-        run_command_input = input()
-        run_command = run_command_input.lower() in ["y", "yes", ""]
-        simulate_clear(console)
-
-        if not run_command:
-            return
-        
-        result = run_shell_command(proposed_solution)
-        error_iterations += 1
-
-    else:
-        simulate_clear(console)
-        # success
-        if result.stdout:
-            rich.print(Panel(result.stdout, title="Output", expand=False, border_style="blue"))
-
+                user_action = ask_user_if_run_revise_or_exit()
+                #simulate_clear(console)
+                if user_action == Action.EXIT:
+                    state = State.EXIT
+                elif user_action == Action.REVISE:
+                    state = State.GATHER_REVISION
+                elif user_action == Action.EXPLAIN:
+                    state = State.PRINT_EXPLANATION
+                elif user_action == Action.RUN:
+                    state = State.RUN_COMMAND
+                    error_iterations += 1
 
 
 if __name__ == "__main__":
