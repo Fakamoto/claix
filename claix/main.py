@@ -59,7 +59,7 @@ def main(
     thread_id = get_or_create_default_thread_id()
 
     console = Console()
-    claix = Claix(assistant_id, thread_id)
+    claix: Claix = Claix(assistant_id, thread_id)
     state = State.PROCESS_INSTRUCTIONS
 
     start = True

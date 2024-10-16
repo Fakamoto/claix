@@ -1,8 +1,9 @@
 import time
 from typing import Optional
-import instructor
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from openai import OpenAI
+import json
+import instructor
 
 
 class ClaixCommand(BaseModel):
@@ -15,16 +16,17 @@ class ClaixCommand(BaseModel):
         command (Optional[str]): The string command to execute.
         explanation (Optional[str]): The explanation of the command.
     """
-    is_command: bool
-    command: Optional[str]
-    explanation: Optional[str]
+    is_command: bool = Field(description="True if the response is a command, False otherwise")
+    command: Optional[str] = Field(description="The string command to execute")
+    explanation: Optional[str] = Field(description="The explanation of the command")
 
 
 class Claix:
     def __init__(self, assistant_id: str, thread_id: str = None):
         self.assistant_id = assistant_id
         self.thread_id = thread_id
-        self.client = OpenAI()
+        self.client: OpenAI = instructor.patch(OpenAI())
+        self.model = "gpt-4o-mini"
 
     def __call__(self, prompt, thread_id=None):
         if not thread_id:
@@ -38,10 +40,13 @@ class Claix:
 
         text_response: str = self.get_last_message(thread_id)
 
-        claix_command: ClaixCommand = self.populate_model_from_text(ClaixCommand, text_response)
-
-        if not claix_command.command:
-            claix_command.is_command = False
+        claix_command: ClaixCommand = self.client.chat.completions.create(
+            model=self.model,  # Use self.model instead of hardcoding
+            response_model=ClaixCommand,
+            messages=[
+                {"role": "user", "content": text_response},
+            ],
+        )
 
         return claix_command
 
@@ -65,7 +70,7 @@ class Claix:
         revision_instructions: str,
         original_instructions: str,
         proposed_command: str,
-    ) -> str:
+    ) -> ClaixCommand:
         revision_prompt = (
             f"I want to: {original_instructions}\n"
             f"The proposed solution was: {proposed_command}\n\n"
@@ -73,7 +78,7 @@ class Claix:
             f"please give me a new solution considering that"
         )
 
-        revised_solution: str = self(revision_prompt)
+        revised_solution: ClaixCommand = self(revision_prompt)
 
         return revised_solution
 
@@ -81,8 +86,8 @@ class Claix:
     def create_assistant(
         name: str,
         instructions: str,
-        model: str = "gpt-4-1106-preview",
-        tools: list[dict] = [{"type": "code_interpreter"}, {"type": "retrieval"}],
+        model: str = "gpt-4o-mini",
+        tools: list[dict] = [{"type": "code_interpreter"}, {"type": "file_search"}],
     ):
         client = OpenAI()
         assistant = client.beta.assistants.create(
@@ -98,20 +103,6 @@ class Claix:
         client = OpenAI()
         thread = client.beta.threads.create()
         return thread
-
-    @staticmethod
-    def populate_model_from_text(model: BaseModel, text: str) -> BaseModel:
-        client = instructor.patch(OpenAI())
-        """Populates a pydantic model from a text."""
-        response: model = client.chat.completions.create(
-            model="gpt-3.5-turbo",
-            response_model=model,
-            messages=[
-                {"role": "user", "content": text},
-            ],
-            max_retries=3,
-        )
-        return response
 
     def create_thread_message(self, prompt: str, thread_id: str):
         message = self.client.beta.threads.messages.create(

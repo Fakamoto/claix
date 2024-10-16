@@ -5,8 +5,8 @@ from pathlib import Path
 from enum import Enum, auto
 import rich
 import inquirer
-from claix.ai import Claix
-
+from claix.ai import Claix, ClaixCommand
+import dbm
 
 USER_OS = "Windows" if os.name == "nt" else "Posix"
 
@@ -61,22 +61,31 @@ def run_shell_command(command):
 
 
 def get_assistant_id(assistant: str = "default"):
-    with shelve.open(str(db_path)) as db:
-        try:
-            return db["assistants"][assistant]["id"]
-        except KeyError:
-            return None
+    try:
+        with shelve.open(str(db_path)) as db:
+            try:
+                return db["assistants"][assistant]["id"]
+            except KeyError:
+                return None
+    except dbm.error:
+        # If the database can't be opened, we'll create a new one
+        return None
 
 
 def set_assistant_id(assistant_id, assistant="default"):
-    with shelve.open(str(db_path)) as db:
-        assistants = db.get("assistants", {})
-        default = assistants.get(assistant)
-        if default:
-            db["assistants"][assistant]["id"] = assistant_id
-        else:
-            db["assistants"] = {assistant: {"id": assistant_id}}
-    return assistant_id
+    try:
+        with shelve.open(str(db_path)) as db:
+            assistants = db.get("assistants", {})
+            default = assistants.get(assistant)
+            if default:
+                db["assistants"][assistant]["id"] = assistant_id
+            else:
+                db["assistants"] = {assistant: {"id": assistant_id}}
+        return assistant_id
+    except dbm.error:
+        # If we can't open or create the database, we'll just return the assistant_id
+        # This means we'll create a new assistant each time, but it's better than crashing
+        return assistant_id
 
 
 def get_or_create_default_assistant_id():
@@ -85,6 +94,8 @@ def get_or_create_default_assistant_id():
         assistant = Claix.create_assistant(
             name="default",
             instructions=DEFAULT_INSTRUCTIONS,
+            model="gpt-4o-mini",
+            tools=[{"type": "code_interpreter"}, {"type": "file_search"}]
         )
         assistant_id = set_assistant_id(assistant.id, assistant="default")
     return assistant_id
