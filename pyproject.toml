@@ -4,6 +4,8 @@ version = "0.1.6"
 description = "A CLI translating user requests into specific CLI commands"
 authors = ["Facundo Goiriz <facundogoiriz@gmail.com>"]
 readme = "README.md"
+license = "MIT"
+repository = "https://github.com/Fakamoto/claix"
 
 [tool.poetry.scripts]
 claix = "claix.main:app"

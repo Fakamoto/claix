@@ -22,6 +22,14 @@ class ClaixCommand(BaseModel):
 
 
 class Claix:
+    TERMINAL_RUN_STATUSES = {
+        "cancelled",
+        "completed",
+        "expired",
+        "failed",
+        "incomplete",
+    }
+
     def __init__(self, assistant_id: str, thread_id: str = None):
         self.assistant_id = assistant_id
         self.thread_id = thread_id
@@ -126,10 +134,20 @@ class Claix:
         )
         return run
 
-    def wait_for_run(self, run):
-        while run.status != "completed":
+    def wait_for_run(self, run, timeout_seconds: float = 120, poll_interval: float = 0.5):
+        deadline = time.monotonic() + timeout_seconds
+
+        while run.status not in self.TERMINAL_RUN_STATUSES:
+            if time.monotonic() > deadline:
+                raise TimeoutError(
+                    f"Run {run.id} did not finish within {timeout_seconds} seconds."
+                )
             run = self.update_run(run)
-            time.sleep(0.1)
+            time.sleep(poll_interval)
+
+        if run.status != "completed":
+            raise RuntimeError(f"Run {run.id} finished with status: {run.status}")
+
         return run
 
     def get_thread_messages(self, thread_id: str):
